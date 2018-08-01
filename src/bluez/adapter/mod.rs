@@ -4,7 +4,7 @@ mod peripheral;
 use libc;
 use std;
 use std::ffi::CStr;
-use nom::IResult;
+use nom;
 use bytes::{BytesMut, BufMut};
 
 use std::collections::{HashSet, HashMap};
@@ -264,11 +264,11 @@ impl ConnectedAdapter {
                                 new_cur = Some(left.to_owned());
                             };
                         }
-                        Err(Err::Incomplete(_)) => {
+                        Err(nom::Err::Incomplete(_)) => {
                             new_cur = None;
                         },
-                        Err(Err::Error(err)) => {
-                            error!("parse error {}\nfrom: {:?}", err, cur);
+                        Err(nom::Err::Error(err)) | Err(nom::Err::Failure(err)) => {
+                            error!("parse error {:?}\nfrom: {:?}", err, cur);
                         }
                     }
                 };

@@ -257,7 +257,7 @@ impl Peripheral {
 
             match att::characteristic_descriptors(&data) {
                 Ok(result) => {
-                    match result {
+                    match result.1 {
                         Ok(char_descs) => {
                             print!("Chars: {:#?}", char_descs);
 
@@ -341,7 +341,7 @@ impl Peripheral {
                 let use_notify = characteristic.properties.contains(CharPropFlags::NOTIFY);
                 let use_indicate = characteristic.properties.contains(CharPropFlags::INDICATE);
 
-                let mut value = resp.value;
+                let mut value = resp.1.value;
 
                 if enable {
                     if use_notify {
@@ -360,7 +360,7 @@ impl Peripheral {
                 let mut value_buf = BytesMut::with_capacity(2);
                 value_buf.put_u16_le(value);
                 let data = Peripheral::wait_until_done(|done: RequestCallback| {
-                    self.request_by_handle(resp.handle, &*value_buf, Some(done))
+                    self.request_by_handle(resp.1.handle, &*value_buf, Some(done))
                 })?;
 
                 if data.len() > 0 && data[0] == ATT_OP_WRITE_RESP {
@@ -547,7 +547,7 @@ impl ApiPeripheral for Peripheral {
 
             match att::characteristics(&data) {
                 Ok(result) => {
-                    match result {
+                    match result.1 {
                         Ok(chars) => {
                             print!("Chars: {:#?}", chars);
 
