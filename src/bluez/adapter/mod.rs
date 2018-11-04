@@ -11,6 +11,7 @@ use std::collections::{HashSet, HashMap};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::error;
 
 use ::Result;
 use api::{CentralEvent, BDAddr, Central};
@@ -257,16 +258,16 @@ impl ConnectedAdapter {
                     };
 
                     match result {
-                        IResult::Done(left, result) => {
+                        Ok((left, result)) => {
                             ConnectedAdapter::handle(&connected, result);
                             if !left.is_empty() {
                                 new_cur = Some(left.to_owned());
                             };
                         }
-                        IResult::Incomplete(_) => {
+                        Err(Err::Incomplete(_)) => {
                             new_cur = None;
                         },
-                        IResult::Error(err) => {
+                        Err(Err::Error(err)) => {
                             error!("parse error {}\nfrom: {:?}", err, cur);
                         }
                     }
@@ -302,8 +303,9 @@ impl ConnectedAdapter {
                             Peripheral::new(self.clone(), info.bdaddr)
                         });
 
-
+                    let rssi = info.rssi;
                     peripheral.handle_device_message(&hci::Message::LEAdvertisingReport(info));
+                    peripheral.set_rssi(rssi);
                 }
 
                 if new {

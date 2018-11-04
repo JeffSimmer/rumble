@@ -153,6 +153,35 @@ impl Display for Characteristic {
     }
 }
 
+/// A Bluetooth characteristic. Characteristics are the main way you will interact with other
+/// bluetooth devices. Characteristics are identified by a UUID which may be standardized
+/// (like 0x2803, which identifies a characteristic for reading heart rate measurements) but more
+/// often are specific to a particular device. The standard set of characteristics can be found
+/// [here](https://www.bluetooth.com/specifications/gatt/characteristics).
+///
+/// A characteristic may be interacted with in various ways depending on its properties. You may be
+/// able to write to it, read from it, set its notify or indicate status, or send a command to it.
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone)]
+pub struct CharacteristicDescriptor {
+    /// The handle of this characteristic descriptor.
+    pub handle: u16,
+    /// The UUID for this characteristic descriptor.
+    pub uuid: UUID,
+}
+
+impl Display for CharacteristicDescriptor {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "handle: 0x{:04X}, uuid: {:?}",
+               self.handle, self.uuid)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ServiceClass {
+    ServiceClassUUID16(u16),
+    ServiceClassUUID128([u8; 16])
+}
+
 /// The properties of this peripheral, as determined by the advertising reports we've received for
 /// it.
 #[derive(Debug, Default, Clone)]
@@ -171,12 +200,15 @@ pub struct PeripheralProperties {
     pub discovery_count: u32,
     /// True if we've discovered the device before
     pub has_scan_response: bool,
+    /// Service class
+    pub service_class: Vec<ServiceClass>,
+    pub rssi: i16,
 }
 
 /// Peripheral is the device that you would like to communicate with (the "server" of BLE). This
 /// struct contains both the current state of the device (its properties, characteristics, etc.)
 /// as well as functions for communication.
-pub trait Peripheral: Send + Sync + Clone + Debug {
+pub trait Peripheral: Send + Sync + Debug {
     /// Returns the address of the peripheral.
     fn address(&self) -> BDAddr;
 

@@ -177,7 +177,7 @@ impl ACLStream {
             if !value.is_empty() {
                 match value[0] {
                     ATT_OP_EXCHANGE_MTU_REQ => {
-                        let request = att::mtu_request(&value).to_result().unwrap();
+                        let request = att::mtu_request(&value).unwrap();
                         // is the client MTU smaller than ours?
                         if request.client_rx_mtu <= self.adapter.info.acl_mtu {
                             debug!("sending MTU: {}", self.adapter.info.acl_mtu);
@@ -194,7 +194,7 @@ impl ACLStream {
                     }
                     ATT_OP_VALUE_NOTIFICATION => {
                         debug!("value notification: {:?}", value);
-                        match att::value_notification(&value).to_result() {
+                        match att::value_notification(&value) {
                             Ok(notification) => {
                                 let handlers = self.notification_handlers.lock().unwrap();
                                 handlers.iter().for_each(|h| h(notification.clone()));

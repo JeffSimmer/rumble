@@ -1,6 +1,6 @@
 use nom::{le_u8, le_u16, IResult};
 
-use ::api::{Characteristic, UUID, CharPropFlags, ValueNotification};
+use ::api::{Characteristic, CharacteristicDescriptor, UUID, CharPropFlags, ValueNotification};
 
 use bluez::constants::*;
 use bluez::protocol::*;
@@ -146,6 +146,43 @@ pub fn characteristics(i: &[u8]) -> IResult<&[u8], Result<Vec<Characteristic>, E
             let num = i.len() / rec_len as usize;
             let b16_uuid = rec_len == 7;
             try_parse!(i, map!(count!(apply!(characteristic, b16_uuid), num), |r| Ok(r)))
+        }
+        x => {
+            warn!("unhandled characteristics op type {} for {:?}", x, i);
+            (&[][..], Ok(vec![]))
+        }
+    };
+
+    IResult::Done(i, result)
+}
+
+fn characteristic_descriptor(i: &[u8], b16_uuid: bool) -> IResult<&[u8], CharacteristicDescriptor> {
+    let (i, handle) = try_parse!(i, le_u16);
+    let (i, uuid) = if b16_uuid {
+        try_parse!(i, map!(le_u16, |b| UUID::B16(b)))
+    } else {
+        try_parse!(i, map!(parse_uuid_128, |b| UUID::B128(b)))
+    };
+
+    IResult::Done(i, CharacteristicDescriptor {
+        handle,
+        uuid,
+    })
+}
+
+pub fn characteristic_descriptors(i: &[u8]) -> IResult<&[u8], Result<Vec<CharacteristicDescriptor>, ErrorResponse>> {
+    let (i, opcode) = try_parse!(i, le_u8);
+
+    let (i, result) = match opcode {
+        ATT_OP_ERROR_RESP => {
+            try_parse!(i, map!(error_response, |r| Err(r)))
+        }
+        ATT_OP_FIND_INFO_RESP => {
+            let (i, rec_type) = try_parse!(i, le_u8);
+            let rec_len = match rec_type { 0x01 => 4, _ => 18 };
+            let num = i.len() / rec_len as usize;
+            let b16_uuid = rec_len == 4;
+            try_parse!(i, map!(count!(apply!(characteristic_descriptor, b16_uuid), num), |r| Ok(r)))
         }
         x => {
             warn!("unhandled characteristics op type {} for {:?}", x, i);

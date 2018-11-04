@@ -1,7 +1,7 @@
 use ::Result;
 
-use api::{Characteristic, CharPropFlags, Callback, PeripheralProperties, BDAddr, Central,
-          Peripheral as ApiPeripheral};
+use api::{Characteristic, CharacteristicDescriptor, CharPropFlags, Callback, PeripheralProperties, BDAddr, Central,
+          Peripheral as ApiPeripheral, ServiceClass};
 use std::mem::size_of;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -133,6 +133,8 @@ impl Peripheral {
                     // TODO: reset service data
                 }
 
+                //println!("{:?}", info);
+
                 for datum in info.data.iter() {
                     match datum {
                         &LocalName(ref name) => {
@@ -143,6 +145,20 @@ impl Peripheral {
                         }
                         &ManufacturerSpecific(ref data) => {
                             properties.manufacturer_data = Some(data.clone());
+                        }
+                        &ServiceClassUUID16(ref uuid) => {
+                            if(!properties.service_class.iter().any(|sc| match sc {
+                                ServiceClass::ServiceClassUUID16(sc_uuid) => sc_uuid == uuid,
+                                _ => false  })) {
+                                properties.service_class.push(ServiceClass::ServiceClassUUID16(*uuid));
+                            }
+                        }
+                        &ServiceClassUUID128(ref uuid) => {
+                            if(!properties.service_class.iter().any(|sc| match sc {
+                                ServiceClass::ServiceClassUUID128(sc_uuid) => sc_uuid == uuid,
+                                _ => false  })) {
+                                properties.service_class.push(ServiceClass::ServiceClassUUID128(uuid.clone()));
+                            }
                         }
                         _ => {
                             // skip for now
@@ -162,7 +178,7 @@ impl Peripheral {
                     Ok(stream) => {
                         stream.iter().for_each(|stream| {
                             if stream.handle == handle {
-                                debug!("got data packet for {}: {:?}", self.address, data);
+                                print!("got data packet for {}: {:?}\n", self.address, data);
                                 stream.receive(data);
                             }
                         });
@@ -183,9 +199,14 @@ impl Peripheral {
                 // TODO clean up our sockets
             },
             msg => {
-                debug!("ignored message {:?}", msg);
+                print!("ignored message {:?}", msg);
             }
         }
+    }
+
+    pub fn set_rssi(&self, rssi: u8) {
+        let mut properties = self.properties.lock().unwrap();
+        properties.rssi = (rssi as i16) - 256;
     }
 
     fn request_raw_async(&self, data: &mut[u8], handler: Option<RequestCallback>) {
@@ -218,14 +239,104 @@ impl Peripheral {
         self.request_raw_async(&mut buf, handler);
     }
 
+    fn discover_characteristic_descriptors(&self, characteristic: &Characteristic) -> Result<Vec<CharacteristicDescriptor>> {
+        let mut results = vec![];
+        let mut start = characteristic.start_handle + 2; // Skip past the value handle
+        let end = characteristic.end_handle;
+        loop {
+            print!("discovering characteristic descriptors in range [{}, {}]", start, end);
+
+            let mut buf = BytesMut::with_capacity(5);
+            buf.put_u8(ATT_OP_FIND_INFO_REQ);
+            buf.put_u16_le(start);
+            buf.put_u16_le(end);
+            let mut buf = buf.to_vec();
+            let data = self.request_raw(&mut buf)?;
+
+            print!(":::Received data::: {:?} :::\n", data);
+
+            match att::characteristic_descriptors(&data) {
+                Ok(result) => {
+                    match result {
+                        Ok(char_descs) => {
+                            print!("Chars: {:#?}", char_descs);
+
+                            // TODO this copy can be removed
+                            results.extend(char_descs.clone());
+
+                            if let Some(ref last) = char_descs.iter().last() {
+                                if start + (char_descs.len() as u16) < end {
+                                    start += char_descs.len() as u16;
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+                        Err(err) => {
+                            // this generally means we should stop iterating
+                            print!("got error: {:?}", err);
+                            break;
+                        }
+                    }
+                }
+                Err(err) => {
+                    print!("failed to parse chars: {:?}", err);
+                    return Err(Error::Other(format!("failed to parse characteristics response {:?}",
+                                                    err)));
+                }
+            };
+        }
+        Ok(results)
+    }
+
+    fn command_with_handle_async(&self, handle: u16, data: &[u8], handler: Option<CommandCallback>) {
+        let l = self.stream.read().unwrap();
+        match l.as_ref() {
+            Some(stream) => {
+                let mut buf = BytesMut::with_capacity(3 + data.len());
+                buf.put_u8(ATT_OP_WRITE_CMD);
+                buf.put_u16_le(handle);
+                print!("{:?}", handle);
+                buf.put(data);
+                print!("{:?}", data);
+
+                stream.write_cmd(&mut *buf, handler);
+            }
+            None => {
+                handler.iter().for_each(|h| h(Err(Error::NotConnected)));
+            }
+        }
+    }
+
+    fn command_with_handle(&self, handle: u16, data: &[u8]) -> Result<()> {
+        Peripheral::wait_until_done(|done: CommandCallback| {
+            self.command_with_handle_async(handle, data, Some(done));
+        })
+    }
+
     fn notify(&self, characteristic: &Characteristic, enable: bool) -> Result<()> {
-        info!("setting notify for {}/{:?} to {}", self.address, characteristic.uuid, enable);
+        print!("setting notify for {}/{:?} to {}", self.address, characteristic.uuid, enable);
+        let characteristic_descriptors = self.discover_characteristic_descriptors(characteristic)?;
+        print!("\n\n\n{:?}\n\n\n", characteristic_descriptors);
+        let handle = characteristic_descriptors.iter().find(|cd| match cd.uuid { B16(uuid) => uuid == GATT_CLIENT_CHARAC_CFG_UUID, _ => false }).unwrap().handle;
+
+
+        let mut value_buf = BytesMut::with_capacity(2);
+        value_buf.put_u16_le(0x0001);
+
+        self.command_with_handle(handle, &*value_buf);
+
+
         let mut buf = att::read_by_type_req(
             characteristic.start_handle, characteristic.end_handle, B16(GATT_CLIENT_CHARAC_CFG_UUID));
 
         let data = self.request_raw(&mut buf)?;
 
-        match att::notify_response(&data).to_result() {
+        print!("ReadByTypeRequest: {:?}\n", data);
+
+        return Ok(());
+
+        match att::notify_response(&data) {
             Ok(resp) => {
                 let use_notify = characteristic.properties.contains(CharPropFlags::NOTIFY);
                 let use_indicate = characteristic.properties.contains(CharPropFlags::INDICATE);
@@ -253,15 +364,15 @@ impl Peripheral {
                 })?;
 
                 if data.len() > 0 && data[0] == ATT_OP_WRITE_RESP {
-                    debug!("Got response from notify: {:?}", data);
+                    print!("Got response from notify: {:?}", data);
                     return Ok(());
                 } else {
-                    warn!("Unexpected notify response: {:?}", data);
+                    print!("Unexpected notify response: {:?}", data);
                     return Err(Error::Other("Failed to set notify".to_string()));
                 }
             }
             Err(err) => {
-                debug!("failed to parse notify response: {:?}", err);
+                print!("failed to parse notify response: {:?}", err);
                 return Err(Error::Other("failed to get characteristic state".to_string()));
             }
         };
@@ -434,11 +545,11 @@ impl ApiPeripheral for Peripheral {
             let mut buf = att::read_by_type_req(start, end, B16(GATT_CHARAC_UUID));
             let data = self.request_raw(&mut buf)?;
 
-            match att::characteristics(&data).to_result() {
+            match att::characteristics(&data) {
                 Ok(result) => {
                     match result {
                         Ok(chars) => {
-                            debug!("Chars: {:#?}", chars);
+                            print!("Chars: {:#?}", chars);
 
                             // TODO this copy can be removed
                             results.extend(chars.clone());
@@ -469,7 +580,7 @@ impl ApiPeripheral for Peripheral {
         // fix the end handles (we don't get them directly from device, so we have to infer)
         for i in 0..results.len() {
             (*results.get_mut(i).unwrap()).end_handle =
-                results.get(i + 1).map(|c| c.end_handle).unwrap_or(end);
+                results.get(i + 1).map(|c| c.start_handle - 1).unwrap_or(end);
         }
 
         // update our cache
@@ -486,7 +597,9 @@ impl ApiPeripheral for Peripheral {
                 let mut buf = BytesMut::with_capacity(3 + data.len());
                 buf.put_u8(ATT_OP_WRITE_CMD);
                 buf.put_u16_le(characteristic.value_handle);
+                print!("{:?}", characteristic.value_handle);
                 buf.put(data);
+                print!("{:?}", data);
 
                 stream.write_cmd(&mut *buf, handler);
             }

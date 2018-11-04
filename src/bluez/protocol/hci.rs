@@ -36,7 +36,7 @@ mod tests {
             }
         );
 
-        assert_eq!(message(&buf), IResult::Done(&[][..], expected));
+        assert_eq!(message(&buf), Ok((&[][..], expected)));
     }
 
     #[test]
@@ -61,21 +61,21 @@ mod tests {
             }
         );
 
-        assert_eq!(message(&buf), IResult::Done(&[][..], expected));
+        assert_eq!(message(&buf), Ok(&[][..], expected));
     }
 
     #[test]
     fn test_bd_addr() {
         let buf = [192u8,74,150,234,218,116];
-        assert_eq!(bd_addr(&buf), IResult::Done(&[][..],BDAddr {
-            address: [192, 74, 150, 234, 218, 116]}))
+        assert_eq!(bd_addr(&buf), Ok((&[][..],BDAddr {
+            address: [192, 74, 150, 234, 218, 116]})))
     }
 
     #[test]
     fn test_le_advertising_info() {
         let buf = [1, 4,0,192,74,150,234,218,116,11,2,1,6,7,2,240,255,229,255,224,255];
 
-        assert_eq!(le_advertising_info(&buf), IResult::Done(&[][..], LEAdvertisingInfo {
+        assert_eq!(le_advertising_info(&buf), Ok((&[][..], LEAdvertisingInfo {
             evt_type: 4,
             bdaddr_type: 0,
             bdaddr: BDAddr {
@@ -87,27 +87,27 @@ mod tests {
                 ServiceClassUUID16(65520),
                 ServiceClassUUID16(65509),
                 ServiceClassUUID16(65504)],
-        }));
+        })));
     }
 
     #[test]
     fn test_le_advertising_data() {
         let buf = [7, 2, 240, 255, 229, 255, 224, 255];
 
-        assert_eq!(le_advertising_data(&buf), IResult::Done(&[][..],
+        assert_eq!(le_advertising_data(&buf), Ok((&[][..],
                                                             vec![ServiceClassUUID16(65520),
                                                                  ServiceClassUUID16(65509),
                                                                  ServiceClassUUID16(65504)]));
 
         let buf = [18,9,76,69,68,66,108,117,101,45,69,65,57,55,66,55,65,51,32];
-        assert_eq!(le_advertising_data(&buf), IResult::Done(&[][..], vec![
-            LocalName(String::from("LEDBlue-EA97B7A3 "))]));
+        assert_eq!(le_advertising_data(&buf), Ok((&[][..], vec![
+            LocalName(String::from("LEDBlue-EA97B7A3 "))])));
     }
 
     #[test]
     fn test_acl_data_packet() {
         let buf = [2, 64, 32, 9, 0, 5, 0, 4, 0, 1, 16, 1, 0, 16];
-        assert_eq!(message(&buf), IResult::Done(
+        assert_eq!(message(&buf), Ok((
             &[][..],
             Message::ACLDataPacket(ACLData {
                 handle: 64,
@@ -115,32 +115,32 @@ mod tests {
                 data: vec![1, 16, 1, 0, 16],
                 len: 5,
             }),
-        ))
+        )));
     }
 
     #[test]
     fn test_cmd_status() {
         let buf = [4, 15, 4, 0, 1, 22, 32];
-        assert_eq!(message(&buf), IResult::Done(
+        assert_eq!(message(&buf), Ok((
             &[][..],
             Message::CommandStatus {
                 command: CommandType::LEReadRemoteUsedFeatures,
                 status: HCIStatus::Success,
             }
-        ));
+        )));
     }
 
     #[test]
     fn test_recv_le_meta() {
         let buf = [4, 62, 12, 4, 0, 64, 0, 1, 0, 0, 0, 0, 0, 0, 0];
-        assert_eq!(message(&buf), IResult::Done(
+        assert_eq!(message(&buf), Ok((
             &[][..],
             Message::LEReadRemoteUsedFeaturesComplete {
                 status: HCIStatus::Success,
                 handle: 64,
                 flags: LEFeatureFlags::LE_ENCRYPTION,
             }
-        ))
+        )))
     }
 }
 
@@ -244,7 +244,8 @@ pub struct LEAdvertisingInfo {
     pub evt_type: u8,
     pub bdaddr_type: u8,
     pub bdaddr: BDAddr,
-    pub data: Vec<LEAdvertisingData>
+    pub data: Vec<LEAdvertisingData>,
+    pub rssi: u8,
 }
 
 #[derive(Debug, PartialEq)]
@@ -504,7 +505,7 @@ fn le_advertising_data(i: &[u8]) -> IResult<&[u8], Vec<LEAdvertisingData>> {
             (&i[len as usize..], vec![])
         }
     };
-    IResult::Done(i, result)
+    Ok((i, result))
 }
 
 named!(le_advertising_info<&[u8], LEAdvertisingInfo>,
@@ -518,9 +519,10 @@ named!(le_advertising_info<&[u8], LEAdvertisingInfo>,
            acc.extend(x);
            acc
        })) >>
+       rssi: le_u8 >>
        (
          LEAdvertisingInfo {
-           evt_type, bdaddr_type, bdaddr, data: data
+           evt_type, bdaddr_type, bdaddr, data: data, rssi: rssi
          }
        )
     ));
@@ -595,7 +597,7 @@ fn le_meta_event(i: &[u8]) -> IResult<&[u8], Message> {
             try_parse!(i, le_conn_update_complete)
         }
     };
-    IResult::Done(i, result)
+    Ok((i, result))
 }
 
 fn cmd_complete(i: &[u8]) -> IResult<&[u8], Message> {
@@ -624,6 +626,7 @@ fn cmd_complete(i: &[u8]) -> IResult<&[u8], Message> {
         CommandType::ReadRSSI => {
             let (i, handle) = try_parse!(i, le_u16);
             let (_, rssi) = try_parse!(i, le_u8);
+            print!("Read RSSI Command Complete {:?}", rssi);
             ReadRSSI { handle, rssi }
         },
         x => {
@@ -635,7 +638,7 @@ fn cmd_complete(i: &[u8]) -> IResult<&[u8], Message> {
         }
     };
 
-    IResult::Done(&i, Message::HCICommandComplete(result))
+    Ok((&i, Message::HCICommandComplete(result)))
 }
 
 named!(disconnect_complete<&[u8], Message>,
@@ -669,10 +672,11 @@ fn hci_event_pkt(i: &[u8]) -> IResult<&[u8], Message> {
         DisconnComplete => try_parse!(data, disconnect_complete).1,
         _ => {
             warn!("Unhandled HCIEventPkt subtype {:?}", sub_type);
-            return IResult::Error(Err::Code(ErrorKind::Custom(4)))
+            return Err(Err::Error(Err::Code(ErrorKind::Custom(4))))
         }
     };
-    IResult::Done(i, result)
+    print!("HCI Packet: {:?}\n\n", result);
+    Ok((i, result))
 }
 
 fn hci_command_pkt(i: &[u8]) -> IResult<&[u8], Message> {
@@ -694,7 +698,7 @@ fn hci_command_pkt(i: &[u8]) -> IResult<&[u8], Message> {
             }
         }
     };
-    IResult::Done(i, result)
+    Ok((i, result))
 }
 
 fn hci_acldata_pkt(i: &[u8]) -> IResult<&[u8], Message> {
@@ -724,10 +728,10 @@ fn hci_acldata_pkt(i: &[u8]) -> IResult<&[u8], Message> {
         },
         x => {
             warn!("unknown flag type: {}", x);
-            return IResult::Error(Err::Code(ErrorKind::Custom(11)));
+            return Err(Err::Error(Err::Code(ErrorKind::Custom(11))));
         }
     };
-    IResult::Done(i, message)
+    Ok((i, message))
 }
 
 pub fn message(i: &[u8]) -> IResult<&[u8], Message> {
