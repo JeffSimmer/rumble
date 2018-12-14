@@ -17,7 +17,7 @@ categories = ["network-programming", "hardware-support"]
 
 [dependencies]
 libc = "0.2.33"
-nix = "0.9.0"
+nix = "0.12.0"
 bytes = "0.4"
 num = "0.1.41"
 log = "0.3.8"
@@ -28,7 +28,7 @@ failure_derive = "0.1.1"
 backtrace = "0.3.5"
 
 [dependencies.nom]
-version = "^4.1"
+version = "^4.0"
 features = ["verbose-errors"]
 
 [dev-dependencies]
