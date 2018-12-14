@@ -193,7 +193,7 @@ impl ACLStream {
                         }
                     }
                     ATT_OP_VALUE_NOTIFICATION => {
-                        print!("value notification: {:?}", value);
+                        debug!("value notification: {:?}", value);
                         match att::value_notification(&value) {
                             Ok(notification) => {
                                 let handlers = self.notification_handlers.lock().unwrap();

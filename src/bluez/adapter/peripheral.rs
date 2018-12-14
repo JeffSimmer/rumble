@@ -178,7 +178,7 @@ impl Peripheral {
                     Ok(stream) => {
                         stream.iter().for_each(|stream| {
                             if stream.handle == handle {
-                                print!("got data packet for {}: {:?}\n", self.address, data);
+                                debug!("got data packet for {}: {:?}\n", self.address, data);
                                 stream.receive(data);
                             }
                         });
@@ -239,56 +239,6 @@ impl Peripheral {
         self.request_raw_async(&mut buf, handler);
     }
 
-    fn discover_characteristic_descriptors(&self, characteristic: &Characteristic) -> Result<Vec<CharacteristicDescriptor>> {
-        let mut results = vec![];
-        let mut start = characteristic.start_handle + 2; // Skip past the value handle
-        let end = characteristic.end_handle;
-        loop {
-            print!("discovering characteristic descriptors in range [{}, {}]", start, end);
-
-            let mut buf = BytesMut::with_capacity(5);
-            buf.put_u8(ATT_OP_FIND_INFO_REQ);
-            buf.put_u16_le(start);
-            buf.put_u16_le(end);
-            let mut buf = buf.to_vec();
-            let data = self.request_raw(&mut buf)?;
-
-            print!(":::Received data::: {:?} :::\n", data);
-
-            match att::characteristic_descriptors(&data) {
-                Ok(result) => {
-                    match result.1 {
-                        Ok(char_descs) => {
-                            print!("Chars: {:#?}", char_descs);
-
-                            // TODO this copy can be removed
-                            results.extend(char_descs.clone());
-
-                            if let Some(ref last) = char_descs.iter().last() {
-                                if start + (char_descs.len() as u16) < end {
-                                    start += char_descs.len() as u16;
-                                    continue;
-                                }
-                            }
-                            break;
-                        }
-                        Err(err) => {
-                            // this generally means we should stop iterating
-                            print!("got error: {:?}", err);
-                            break;
-                        }
-                    }
-                }
-                Err(err) => {
-                    print!("failed to parse chars: {:?}", err);
-                    return Err(Error::Other(format!("failed to parse characteristics response {:?}",
-                                                    err)));
-                }
-            };
-        }
-        Ok(results)
-    }
-
     fn command_with_handle_async(&self, handle: u16, data: &[u8], handler: Option<CommandCallback>) {
         let l = self.stream.read().unwrap();
         match l.as_ref() {
@@ -296,9 +246,9 @@ impl Peripheral {
                 let mut buf = BytesMut::with_capacity(3 + data.len());
                 buf.put_u8(ATT_OP_WRITE_CMD);
                 buf.put_u16_le(handle);
-                print!("{:?}", handle);
+                //print!("{:?}", handle);
                 buf.put(data);
-                print!("{:?}", data);
+                //print!("{:?}", data);
 
                 stream.write_cmd(&mut *buf, handler);
             }
@@ -315,9 +265,9 @@ impl Peripheral {
     }
 
     fn notify(&self, characteristic: &Characteristic, enable: bool) -> Result<()> {
-        print!("setting notify for {}/{:?} to {}", self.address, characteristic.uuid, enable);
+        //print!("setting notify for {}/{:?} to {}", self.address, characteristic.uuid, enable);
         let characteristic_descriptors = self.discover_characteristic_descriptors(characteristic)?;
-        print!("\n\n\n{:?}\n\n\n", characteristic_descriptors);
+        //print!("\n\n\n{:?}\n\n\n", characteristic_descriptors);
         let handle = characteristic_descriptors.iter().find(|cd| match cd.uuid { B16(uuid) => uuid == GATT_CLIENT_CHARAC_CFG_UUID, _ => false }).unwrap().handle;
 
 
@@ -332,7 +282,7 @@ impl Peripheral {
 
         let data = self.request_raw(&mut buf)?;
 
-        print!("ReadByTypeRequest: {:?}\n", data);
+        //print!("ReadByTypeRequest: {:?}\n", data);
 
         return Ok(());
 
@@ -364,15 +314,15 @@ impl Peripheral {
                 })?;
 
                 if data.len() > 0 && data[0] == ATT_OP_WRITE_RESP {
-                    print!("Got response from notify: {:?}", data);
+                    //print!("Got response from notify: {:?}", data);
                     return Ok(());
                 } else {
-                    print!("Unexpected notify response: {:?}", data);
+                    //print!("Unexpected notify response: {:?}", data);
                     return Err(Error::Other("Failed to set notify".to_string()));
                 }
             }
             Err(err) => {
-                print!("failed to parse notify response: {:?}", err);
+                //print!("failed to parse notify response: {:?}", err);
                 return Err(Error::Other("failed to get characteristic state".to_string()));
             }
         };
@@ -549,7 +499,7 @@ impl ApiPeripheral for Peripheral {
                 Ok(result) => {
                     match result.1 {
                         Ok(chars) => {
-                            print!("Chars: {:#?}", chars);
+                            debug!("Chars: {:#?}", chars);
 
                             // TODO this copy can be removed
                             results.extend(chars.clone());
@@ -590,6 +540,56 @@ impl ApiPeripheral for Peripheral {
         Ok(results)
     }
 
+    fn discover_characteristic_descriptors(&self, characteristic: &Characteristic) -> Result<Vec<CharacteristicDescriptor>> {
+        let mut results = vec![];
+        let mut start = characteristic.start_handle + 2; // Skip past the value handle
+        let end = characteristic.end_handle;
+        loop {
+            //print!("discovering characteristic descriptors in range [{}, {}]", start, end);
+
+            let mut buf = BytesMut::with_capacity(5);
+            buf.put_u8(ATT_OP_FIND_INFO_REQ);
+            buf.put_u16_le(start);
+            buf.put_u16_le(end);
+            let mut buf = buf.to_vec();
+            let data = self.request_raw(&mut buf)?;
+
+            //print!(":::Received data::: {:?} :::\n", data);
+
+            match att::characteristic_descriptors(&data) {
+                Ok(result) => {
+                    match result.1 {
+                        Ok(char_descs) => {
+                            debug!("Chars: {:#?}", char_descs);
+
+                            // TODO this copy can be removed
+                            results.extend(char_descs.clone());
+
+                            if let Some(ref last) = char_descs.iter().last() {
+                                if start + (char_descs.len() as u16) < end {
+                                    start += char_descs.len() as u16;
+                                    continue;
+                                }
+                            }
+                            break;
+                        }
+                        Err(err) => {
+                            // this generally means we should stop iterating
+                            debug!("got error: {:?}", err);
+                            break;
+                        }
+                    }
+                }
+                Err(err) => {
+                    debug!("failed to parse chars: {:?}", err);
+                    return Err(Error::Other(format!("failed to parse characteristics response {:?}",
+                                                    err)));
+                }
+            };
+        }
+        Ok(results)
+    }
+
     fn command_async(&self, characteristic: &Characteristic, data: &[u8], handler: Option<CommandCallback>) {
         let l = self.stream.read().unwrap();
         match l.as_ref() {
@@ -597,9 +597,9 @@ impl ApiPeripheral for Peripheral {
                 let mut buf = BytesMut::with_capacity(3 + data.len());
                 buf.put_u8(ATT_OP_WRITE_CMD);
                 buf.put_u16_le(characteristic.value_handle);
-                print!("{:?}", characteristic.value_handle);
+                //print!("{:?}", characteristic.value_handle);
                 buf.put(data);
-                print!("{:?}", data);
+                //print!("{:?}", data);
 
                 stream.write_cmd(&mut *buf, handler);
             }
@@ -628,12 +628,26 @@ impl ApiPeripheral for Peripheral {
     fn read_by_type_async(&self, characteristic: &Characteristic, uuid: UUID,
                           handler: Option<RequestCallback>) {
         let mut buf = att::read_by_type_req(characteristic.start_handle, characteristic.end_handle, uuid);
+        println!("{:?}", buf);
         self.request_raw_async(&mut buf, handler);
     }
 
     fn read_by_type(&self, characteristic: &Characteristic, uuid: UUID) -> Result<Vec<u8>> {
         Peripheral::wait_until_done(|done: RequestCallback| {
             self.read_by_type_async(characteristic, uuid, Some(done));
+        })
+    }
+
+    fn read_async(&self, characteristic: &Characteristic,
+                          handler: Option<RequestCallback>) {
+        let mut buf = att::read_req(characteristic.value_handle);
+        println!("{:?}", buf);
+        self.request_raw_async(&mut buf, handler);
+    }
+
+    fn read(&self, characteristic: &Characteristic) -> Result<Vec<u8>> {
+        Peripheral::wait_until_done(|done: RequestCallback| {
+            self.read_async(characteristic, Some(done));
         })
     }
 

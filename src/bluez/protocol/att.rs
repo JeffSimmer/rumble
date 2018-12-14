@@ -108,7 +108,7 @@ named!(pub value_notification<&[u8], ValueNotification>,
     do_parse!(
         _op: tag!(&[ATT_OP_VALUE_NOTIFICATION]) >>
         handle: le_u16 >>
-        value: many1!(le_u8) >>
+        value: many1!(complete!(le_u8)) >>
         (
            ValueNotification { handle, value }
         )
@@ -201,5 +201,12 @@ pub fn read_by_type_req(start_handle: u16, end_handle: u16, uuid: UUID) -> Vec<u
         UUID::B16(u) => buf.put_u16_le(u),
         UUID::B128(u) => buf.put_slice(&u),
     }
+    buf.to_vec()
+}
+
+pub fn read_req(handle: u16) -> Vec<u8> {
+    let mut buf = BytesMut::with_capacity(3);
+    buf.put_u8(ATT_OP_READ_REQ);
+    buf.put_u16_le(handle);
     buf.to_vec()
 }

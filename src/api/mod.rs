@@ -238,6 +238,9 @@ pub trait Peripheral: Send + Sync + Debug {
     /// operation.
     fn discover_characteristics_in_range(&self, start: u16, end: u16) -> Result<Vec<Characteristic>>;
 
+    /// Discovers all characteristics for the device. This is a synchronous operation.
+    fn discover_characteristic_descriptors(&self, characteristic: &Characteristic) -> Result<Vec<CharacteristicDescriptor>>;
+
     /// Sends a command (`write-without-response`) to the characteristic. Takes an optional callback
     /// that will be notified in case of error or when the command has been successfully acked by the
     /// device.
@@ -270,6 +273,19 @@ pub trait Peripheral: Send + Sync + Debug {
     /// Synchronously returns either an error or the device response.
     fn read_by_type(&self, characteristic: &Characteristic,
                     uuid: UUID) -> Result<Vec<u8>>;
+
+    /// Sends a read-by-type request to device for the range of handles covered by the
+    /// characteristic and for the specified declaration UUID. See
+    /// [here](https://www.bluetooth.com/specifications/gatt/declarations) for valid UUIDs.
+    /// Takes an optional callback that will be called with an error or the device response.
+    fn read_async(&self, characteristic: &Characteristic,
+                          handler: Option<RequestCallback>);
+
+    /// Sends a read-by-type request to device for the range of handles covered by the
+    /// characteristic and for the specified declaration UUID. See
+    /// [here](https://www.bluetooth.com/specifications/gatt/declarations) for valid UUIDs.
+    /// Synchronously returns either an error or the device response.
+    fn read(&self, characteristic: &Characteristic) -> Result<Vec<u8>>;
 
     /// Enables either notify or indicate (depending on support) for the specified characteristic.
     /// This is a synchronous call.

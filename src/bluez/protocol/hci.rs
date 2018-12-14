@@ -625,7 +625,6 @@ fn cmd_complete(i: &[u8]) -> IResult<&[u8], Message> {
         CommandType::ReadRSSI => {
             let (i, handle) = try_parse!(i, le_u16);
             let (_, rssi) = try_parse!(i, le_u8);
-            print!("Read RSSI Command Complete {:?}", rssi);
             ReadRSSI { handle, rssi }
         },
         x => {
@@ -674,7 +673,7 @@ fn hci_event_pkt(i: &[u8]) -> IResult<&[u8], Message> {
             return Err(Err::Error(error_position!(i, ErrorKind::Custom(4))));
         }
     };
-    print!("HCI Packet: {:?}\n\n", result);
+    //print!("HCI Packet: {:?}\n\n", result);
     Ok((i, result))
 }
 
