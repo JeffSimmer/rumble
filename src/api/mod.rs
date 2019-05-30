@@ -153,6 +153,22 @@ impl Display for Characteristic {
     }
 }
 
+/// A Bluetooth characteristic descriptor.
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone)]
+pub struct CharacteristicDescriptor {
+    /// The handle of this characteristic descriptor.
+    pub handle: u16,
+    /// The UUID for this characteristic descriptor.
+    pub uuid: UUID,
+}
+
+impl Display for CharacteristicDescriptor {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "handle: 0x{:04X}, uuid: {:?}",
+               self.handle, self.uuid)
+    }
+}
+
 /// The properties of this peripheral, as determined by the advertising reports we've received for
 /// it.
 #[derive(Debug, Default, Clone)]
@@ -171,12 +187,16 @@ pub struct PeripheralProperties {
     pub discovery_count: u32,
     /// True if we've discovered the device before
     pub has_scan_response: bool,
+    /// Service class
+    pub service_class: Vec<UUID>,
+    /// Received signal strength indicator
+    pub rssi: i16,
 }
 
 /// Peripheral is the device that you would like to communicate with (the "server" of BLE). This
 /// struct contains both the current state of the device (its properties, characteristics, etc.)
 /// as well as functions for communication.
-pub trait Peripheral: Send + Sync + Clone + Debug {
+pub trait Peripheral: Send + Sync + Debug {
     /// Returns the address of the peripheral.
     fn address(&self) -> BDAddr;
 
@@ -201,6 +221,9 @@ pub trait Peripheral: Send + Sync + Clone + Debug {
 
     /// Discovers all characteristics for the device. This is a synchronous operation.
     fn discover_characteristics(&self) -> Result<Vec<Characteristic>>;
+
+    /// Discover characteristic descriptors for a characteristic. This is a synchronous operation.
+    fn discover_characteristic_descriptors(&self, characteristic: &Characteristic) -> Result<Vec<CharacteristicDescriptor>>;
 
     /// Discovers characteristics within the specified range of handles. This is a synchronous
     /// operation.
